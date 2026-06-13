@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<title>买菜算账</title>
+
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#E07B3C">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="买菜算账">
+<link rel="apple-touch-icon" href="./icon.svg">
+<style>
+/* ========== 设计变量 ========== */
+:root {
+    --bg:        #FFF8EC;
+    --card-bg:   #FFFFFF;
+    --text:      #2C2C2C;
+    --text-sub:  #6B6155;
+    --primary:   #E07B3C;
+    --accent:    #4A9C6F;
+    --price-size: clamp(4rem, 16vw, 7rem);
+    --btn-radius: 14px;
+    --card-radius: 18px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    display: flex;
+    justify-content: center;
+    padding: 12px;
+    line-height: 1.5;
+}
+
+.app-container {
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding-bottom: 40px;
+}
+
+/* ========== 头部 ========== */
+.app-header {
+    text-align: center;
+    padding: 12px 0 0;
+}
+.app-header h1 {
+    font-size: 2rem;
+    letter-spacing: 4px;
+    font-weight: 700;
+}
+.app-header .subtitle {
+    font-size: 1rem;
+    color: var(--text-sub);
+    margin-top: 2px;
+}
+
+/* ========== 输入区 ========== */
+.input-card {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    padding: 20px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.input-group label {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text);
+}
+.input-group .unit {
+    font-weight: 400;
+    font-size: 0.9rem;
+    color: var(--text-sub);
+    margin-left: 4px;
+}
+.input-group input {
+    width: 100%;
+    height: 56px;
+    border: 2px solid #e0d5c0;
+    border-radius: 12px;
+    padding: 0 16px;
+    font-size: 1.4rem;
+    font-family: inherit;
+    color: var(--text);
+    background: #FFFDF7;
+    -webkit-appearance: none;
+    text-align: right;
+}
+.input-group input:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+.input-group input::placeholder {
+    color: #cfc5b5;
+    font-size: 1.1rem;
+}
+
+/* ========== 结果区 ========== */
+.result-card {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    padding: 24px 16px;
+    text-align: center;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+.result-card.empty .result-placeholder {
+    display: block;
+}
+.result-card.empty .result-price,
+.result-card.empty .result-speech,
+.result-card.empty .result-replay {
+    display: none;
+}
+.result-placeholder {
+    font-size: 1.1rem;
+    color: #c0b5a5;
+}
+.result-price {
+    font-size: var(--price-size);
+    font-weight: 800;
+    line-height: 1.2;
+    letter-spacing: 2px;
+    white-space: nowrap;
+}
+.result-price .unit {
+    font-size: 0.45em;
+    font-weight: 600;
+    color: var(--text-sub);
+    margin-left: 2px;
+}
+.result-speech {
+    font-size: 1.4rem;
+    color: var(--primary);
+    margin-top: 10px;
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+.result-replay {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 1rem;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+}
+
+/* ========== 按钮 ========== */
+.btn {
+    border: none;
+    border-radius: var(--btn-radius);
+    font-size: 1.25rem;
+    font-weight: 700;
+    cursor: pointer;
+    min-height: 64px;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    letter-spacing: 2px;
+    width: 100%;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+.btn:active { opacity: 0.85; }
+.btn-primary { background: var(--primary); color: #fff; }
+
+/* ========== 状态提示 ========== */
+#status-bar {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #999;
+    min-height: 1.2em;
+}
+
+/* ========== 提示 ========== */
+.tips {
+    background: var(--card-bg);
+    border-radius: var(--card-radius);
+    padding: 14px 18px;
+    font-size: 0.9rem;
+    color: var(--text-sub);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+.tips p { margin-bottom: 3px; }
+.tips p:last-child { margin-bottom: 0; }
+
+@media (max-width: 360px) {
+    .result-price { --price-size: clamp(3rem, 12vw, 5rem); }
+    .btn { font-size: 1.15rem; min-height: 56px; }
+}
+</style>
+</head>
+<body>
+
+<div class="app-container">
+    <header class="app-header">
+        <h1>🧮 买菜算账</h1>
+        <p class="subtitle">不知道要付多少钱？算一算</p>
+    </header>
+
+    <!-- 输入区 -->
+    <div class="input-card">
+        <div class="input-group">
+            <label>买了多少<span class="unit">斤</span></label>
+            <input type="text" id="weight" inputmode="decimal"
+                   placeholder="比如 3.2" maxlength="10">
+        </div>
+        <div class="input-group">
+            <label>多少钱一斤<span class="unit">元</span></label>
+            <input type="text" id="unitPrice" inputmode="decimal"
+                   placeholder="比如 4.5" maxlength="10">
+        </div>
+    </div>
+
+    <!-- 计算按钮 -->
+    <button id="btn-calc" class="btn btn-primary">💰 算一算多少钱</button>
+
+    <!-- 结果显示 -->
+    <div class="result-card empty" id="resultCard">
+        <div class="result-placeholder">填好斤数和单价<br>点上面按钮就能算出来</div>
+        <div class="result-price" id="resultPrice"></div>
+        <div class="result-speech" id="resultSpeech"></div>
+        <div class="result-replay" id="resultReplay">🔊 再读一遍</div>
+    </div>
+
+    <!-- 状态提示 -->
+    <div id="status-bar"></div>
+
+    <!-- 提示 -->
+    <div class="tips">
+        <p>💡 <strong>怎么用：</strong></p>
+        <p>1. 填<strong>斤数</strong>（可以带小数，如 3斤2两 = 3.2）</p>
+        <p>2. 填<strong>单价</strong>（一斤多少钱）</p>
+        <p>3. 点<strong>算一算</strong>，自动报出要付多少钱</p>
+    </div>
+</div>
+
+<script>
+// ============================================================
+//  中文数字转换
+// ============================================================
+
+var DIGITS = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+var LIANG  = ['零', '一', '两', '三', '四', '五', '六', '七', '八', '九'];
+
+function integerToChinese(num) {
+    if (num === 0) return '零';
+    var qian = Math.floor(num / 1000);
+    var bai  = Math.floor((num % 1000) / 100);
+    var shi  = Math.floor((num % 100) / 10);
+    var ge   = num % 10;
+    var result = '';
+    var started = false;
+    var zeroPending = false;
+    if (qian > 0) { result += (qian === 2 ? '两' : DIGITS[qian]) + '千'; started = true; }
+    if (bai > 0) {
+        result += (bai === 2 ? '两' : DIGITS[bai]) + '百'; started = true;
+    } else if (started) { zeroPending = true; }
+    if (shi > 0) {
+        if (zeroPending) { result += '零'; zeroPending = false; }
+        if (shi === 1 && !started) { result += '十'; }
+        else { result += DIGITS[shi] + '十'; }
+        started = true;
+    } else if (started) { zeroPending = true; }
+    if (ge > 0) {
+        if (zeroPending) { result += '零'; zeroPending = false; }
+        if (started) { result += DIGITS[ge]; }
+        else { result += (ge === 2 ? '两' : DIGITS[ge]); }
+    }
+    return result;
+}
+
+function numberToMoneySpeech(amount) {
+    if (amount < 0) return '请输入正数';
+    if (amount > 9999.99) return '金额太大了';
+    var totalFen = Math.round(amount * 100);
+    var yuan = Math.floor(totalFen / 100);
+    var jiao = Math.floor((totalFen % 100) / 10);
+    var fen  = totalFen % 10;
+    if (yuan === 0 && jiao === 0 && fen === 0) return '零块钱';
+    var result = '';
+    if (yuan > 0) result += integerToChinese(yuan) + '块';
+    if (yuan > 0 && jiao === 0 && fen > 0) result += '零';
+    if (jiao > 0) result += LIANG[jiao] + '毛';
+    if (fen > 0)  result += LIANG[fen] + '分';
+    result += '钱';
+    return result;
+}
+
+// ============================================================
+//  语音合成（原生 + 百度 TTS 双引擎）
+// ============================================================
+
+function showStatus(msg, color) {
+    var bar = document.getElementById('status-bar');
+    if (bar) { bar.textContent = msg; bar.style.color = color || '#999'; }
+}
+
+var BAIDU_TOKEN = '24.d818ace88e9146b2a0febb5d6d34e264.2592000.1783964819.282335-123701798';
+
+var useNativeSpeech = false;
+var chineseVoice = null;
+var nativeTested = false;
+
+function initVoices() {
+    var voices = window.speechSynthesis.getVoices();
+    if (voices.length === 0) return;
+    chineseVoice = voices.find(function (v) { return v.lang === 'zh-CN'; })
+                || voices.find(function (v) { return v.lang === 'zh-TW'; })
+                || voices.find(function (v) { return v.lang.indexOf('zh') === 0; })
+                || null;
+    if (!nativeTested) {
+        nativeTested = true;
+        if (chineseVoice) {
+            useNativeSpeech = true;
+            showStatus('语音就绪 ✓', '#4A9C6F');
+        } else {
+            useNativeSpeech = false;
+            showStatus('在线语音模式', '#999');
+        }
+    }
+}
+
+if (window.speechSynthesis) {
+    initVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', initVoices);
+    setTimeout(function () {
+        if (!nativeTested) { nativeTested = true; initVoices();
+            if (!chineseVoice) { useNativeSpeech = false; showStatus('在线语音模式', '#999'); }
+        }
+    }, 2000);
+} else {
+    nativeTested = true;
+    useNativeSpeech = false;
+}
+
+function speakChinese(text, rate) {
+    rate = rate || 0.85;
+    if (useNativeSpeech && window.speechSynthesis) {
+        speakNative(text, rate);
+    } else {
+        speakBaiduCloud(text, rate);
+    }
+}
+
+function speakNative(text, rate) {
+    var synth = window.speechSynthesis;
+    synth.cancel();
+    synth.resume();
+    var u = new SpeechSynthesisUtterance(text);
+    u.rate = rate; u.pitch = 1.0; u.volume = 1.0; u.lang = 'zh-CN';
+    if (chineseVoice) u.voice = chineseVoice;
+    var started = false;
+    var fallbackTimer = setTimeout(function () {
+        if (!started) { synth.cancel(); useNativeSpeech = false;
+            showStatus('切换为在线语音...', '#999'); speakBaiduCloud(text, rate); }
+    }, 1500);
+    u.onstart = function () { started = true; clearTimeout(fallbackTimer); showStatus('✅ 播放中', '#4A9C6F'); };
+    u.onend   = function () { showStatus('', ''); };
+    u.onerror = function () { clearTimeout(fallbackTimer); useNativeSpeech = false;
+        showStatus('切换为在线语音...', '#999'); speakBaiduCloud(text, rate); };
+    synth.speak(u);
+}
+
+var _baiduAudio = null;
+function getBaiduAudio() {
+    if (!_baiduAudio) {
+        _baiduAudio = document.createElement('audio');
+        _baiduAudio.setAttribute('playsinline', '');
+        document.body.appendChild(_baiduAudio);
+    }
+    return _baiduAudio;
+}
+
+function speakBaiduCloud(text, rate) {
+    showStatus('正在朗读...', '#E07B3C');
+    var spd = Math.round(3 + (rate - 0.85) * 8);
+    if (spd < 0) spd = 0; if (spd > 9) spd = 9;
+    var url = 'https://tsn.baidu.com/text2audio'
+        + '?lan=zh&ctp=1&cuid=voice_calc_app'
+        + '&tok=' + BAIDU_TOKEN
+        + '&tex=' + encodeURIComponent(text)
+        + '&per=0&spd=' + spd + '&aue=3';
+    var audio = getBaiduAudio();
+    audio.src = url;
+    audio.onplay  = function () { showStatus('✅ 播放中', '#4A9C6F'); };
+    audio.onended = function () { showStatus('', ''); };
+    audio.onerror = function () { showStatus('朗读失败，请检查网络', '#D4726A'); };
+    audio.play().catch(function () { showStatus('请再点一次按钮', '#D4726A'); });
+}
+
+function stopSpeaking() {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (_baiduAudio) { _baiduAudio.pause(); _baiduAudio.removeAttribute('src'); }
+}
+
+// ============================================================
+//  业务逻辑
+// ============================================================
+
+function calcResult() {
+    var wStr = document.getElementById('weight').value.trim();
+    var pStr = document.getElementById('unitPrice').value.trim();
+
+    if (!wStr || !pStr) {
+        showStatus('请先把斤数和单价都填上', '#D4726A');
+        return null;
+    }
+
+    var weight = parseFloat(wStr);
+    var price  = parseFloat(pStr);
+
+    if (isNaN(weight) || isNaN(price)) {
+        showStatus('请输入正确的数字', '#D4726A');
+        return null;
+    }
+    if (weight <= 0 || price <= 0) {
+        showStatus('斤数和单价必须大于 0', '#D4726A');
+        return null;
+    }
+    if (weight > 9999 || price > 9999) {
+        showStatus('数字太大了，请输入 9999 以内', '#D4726A');
+        return null;
+    }
+
+    var total = weight * price;
+    return Math.round(total * 100) / 100;
+}
+
+function showResult(total) {
+    var card = document.getElementById('resultCard');
+    card.classList.remove('empty');
+
+    var formatted = total.toFixed(2);
+    document.getElementById('resultPrice').innerHTML = formatted + '<span class="unit">元</span>';
+    document.getElementById('resultSpeech').textContent = numberToMoneySpeech(total);
+
+    // 数字长了缩小字号
+    var len = formatted.length;
+    var el = document.getElementById('resultPrice');
+    if (len >= 6) {
+        el.style.fontSize = 'clamp(2.8rem, 10vw, 4.5rem)';
+    } else if (len >= 5) {
+        el.style.fontSize = 'clamp(3.5rem, 13vw, 6rem)';
+    } else {
+        el.style.fontSize = '';
+    }
+}
+
+// ============================================================
+//  事件绑定
+// ============================================================
+
+document.getElementById('btn-calc').addEventListener('click', function () {
+    var total = calcResult();
+    if (total === null) return;
+    showResult(total);
+
+    // 语音播报
+    stopSpeaking();
+    var speechText = numberToMoneySpeech(total);
+    speakChinese(speechText);
+});
+
+document.getElementById('resultReplay').addEventListener('click', function () {
+    var speechEl = document.getElementById('resultSpeech');
+    if (speechEl.textContent) {
+        stopSpeaking();
+        speakChinese(speechEl.textContent);
+    }
+});
+
+// ============================================================
+//  初始化
+// ============================================================
+
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then(function () {
+        console.log('✅ Service Worker 已注册');
+    }).catch(function () {});
+}
+</script>
+
+</body>
+</html>

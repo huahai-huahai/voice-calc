@@ -1,0 +1,18 @@
+{
+  "name": "买菜算账",
+  "short_name": "算账",
+  "description": "语音播报价格计算器 — 输入斤数和单价，自动算出总价并用语音报出来",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFF8EC",
+  "theme_color": "#E07B3C",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
