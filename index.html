@@ -364,6 +364,13 @@ function showStatus(msg, color) {
 }
 
 var BAIDU_TOKEN = '24.d818ace88e9146b2a0febb5d6d34e264.2592000.1783964819.282335-123701798';
+
+// 通义千问 AI 解析配置
+// 1. 打开 https://dashscope.aliyun.com/ 注册/登录
+// 2. 右上角「API-KEY管理」→ 创建 API Key → 复制
+// 3. 填到下面
+var QWEN_API_KEY = '请替换为你的通义千问APIKey';
+var QWEN_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
 var useNativeSpeech = false, chineseVoice = null, nativeTested = false;
 
 function initVoices() {
@@ -429,6 +436,92 @@ function speakBaiduCloud(text, rate) {
 function stopSpeaking() {
     if(window.speechSynthesis)window.speechSynthesis.cancel();
     if(_baiduAudio){_baiduAudio.pause();_baiduAudio.removeAttribute('src');}
+}
+
+// ============================================================
+//  AI 解析（通义千问）
+// ============================================================
+var AI_SYSTEM_PROMPT = [
+    '你是一个买菜算账助手。从用户说的中文里提取购物清单，返回JSON。',
+    '规则：1. weight是斤数（数字），unitPrice是每斤单价（元，数字）',
+    '2. name是物品名，没名字就用"物品1""物品2"',
+    '3. "X块Y一斤"→单价X.Y，"买了X斤"→重量X',
+    '4. "斤半"→1.5斤，"X斤半"→X.5斤',
+    '5. "X两"→X/10斤（1两=0.1斤）',
+    '6. 只返回JSON数组，不要任何其他文字',
+    '示例输入："苹果3块8一斤买了四斤，梨5块9一斤买了两斤半"',
+    '示例输出：[{"name":"苹果","weight":4,"unitPrice":3.8},{"name":"梨","weight":2.5,"unitPrice":5.9}]'
+].join(' ');
+
+function parseWithAI(text, callback) {
+    if (QWEN_API_KEY.indexOf('请替换') !== -1) {
+        callback(null, '请先配置通义千问APIKey');
+        return;
+    }
+
+    var body = JSON.stringify({
+        model: 'qwen-turbo',
+        messages: [
+            { role: 'system', content: AI_SYSTEM_PROMPT },
+            { role: 'user', content: text }
+        ],
+        temperature: 0,
+        response_format: { type: 'json_object' }
+    });
+
+    fetch(QWEN_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + QWEN_API_KEY
+        },
+        body: body
+    }).then(function (res) {
+        if (!res.ok) {
+            res.json().then(function (e) {
+                callback(null, 'AI错误: ' + (e.message || res.status));
+            }).catch(function () {
+                callback(null, 'AI请求失败 HTTP ' + res.status);
+            });
+            return;
+        }
+        return res.json();
+    }).then(function (data) {
+        if (!data) return;
+        try {
+            var content = data.choices[0].message.content;
+            // 尝试从返回内容中提取 JSON 数组
+            var jsonMatch = content.match(/\[[\s\S]*\]/);
+            if (!jsonMatch) {
+                callback(null, 'AI返回格式异常');
+                return;
+            }
+            var items = JSON.parse(jsonMatch[0]);
+            // 校验并标准化
+            var result = [];
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                var w = parseFloat(item.weight);
+                var p = parseFloat(item.unitPrice);
+                if (isNaN(w) || isNaN(p) || w <= 0 || p <= 0) continue;
+                result.push({
+                    name: (item.name || ('物品' + (i + 1))).substring(0, 6),
+                    weight: Math.round(w * 100) / 100,
+                    unitPrice: Math.round(p * 100) / 100,
+                    subtotal: Math.round(w * p * 100) / 100
+                });
+            }
+            if (result.length === 0) {
+                callback(null, 'AI没识别到物品');
+            } else {
+                callback(result, null);
+            }
+        } catch (e) {
+            callback(null, 'AI解析失败: ' + e.message);
+        }
+    }).catch(function (e) {
+        callback(null, '网络不通，请检查联网: ' + e.message);
+    });
 }
 
 // ============================================================
@@ -515,14 +608,36 @@ document.getElementById('btnParse').addEventListener('click', function () {
         showStatus('请先说话或打字输入', '#D4726A');
         return;
     }
-    var items = parseVoiceInput(text);
-    if (items.length === 0) {
-        showStatus('没识别出斤数和单价，请检查格式', '#D4726A');
-        return;
-    }
-    currentItems = items;
-    updateAll();
-    showStatus('已识别 ' + items.length + ' 样物品', '#4A9C6F');
+
+    var btn = this;
+    var origText = btn.textContent;
+    btn.textContent = '🤖 AI 解析中...';
+    btn.style.opacity = '0.7';
+    btn.disabled = true;
+
+    parseWithAI(text, function (items, err) {
+        btn.textContent = origText;
+        btn.style.opacity = '1';
+        btn.disabled = false;
+
+        if (items && items.length > 0) {
+            // AI 成功
+            currentItems = items;
+            updateAll();
+            showStatus('AI 识别 ' + items.length + ' 样物品 ✓', '#4A9C6F');
+        } else {
+            // AI 失败，降级到正则
+            console.log('AI解析失败(' + (err || '') + ')，降级到正则');
+            var regexItems = parseVoiceInput(text);
+            if (regexItems.length === 0) {
+                showStatus(err || '没识别出斤数和单价，请换个说法试试', '#D4726A');
+                return;
+            }
+            currentItems = regexItems;
+            updateAll();
+            showStatus('已识别 ' + regexItems.length + ' 样物品', '#4A9C6F');
+        }
+    });
 });
 
 // 清空按钮
