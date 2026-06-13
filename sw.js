@@ -1,5 +1,5 @@
 // 买菜算账 - Service Worker (离线缓存)
-var CACHE = 'voice-calc-v1';
+var CACHE = 'voice-calc-v2';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
