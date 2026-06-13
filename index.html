@@ -369,7 +369,7 @@ var BAIDU_TOKEN = '24.d818ace88e9146b2a0febb5d6d34e264.2592000.1783964819.282335
 // 1. 打开 https://dashscope.aliyun.com/ 注册/登录
 // 2. 右上角「API-KEY管理」→ 创建 API Key → 复制
 // 3. 填到下面
-var QWEN_API_KEY = '请替换为你的通义千问APIKey';
+var QWEN_API_KEY = 'sk-ws-H.REIDIER.EM22.MEQCIGL8xr8VRPDQn2rFvMA_TtDJw-rj3ld8iJ_geWnKN5yfAiAX1TJYMkTaV_MvQxYoBkG2AxEaOfrzVxacapXv3vehFw';
 var QWEN_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
 var useNativeSpeech = false, chineseVoice = null, nativeTested = false;
 
@@ -441,17 +441,7 @@ function stopSpeaking() {
 // ============================================================
 //  AI 解析（通义千问）
 // ============================================================
-var AI_SYSTEM_PROMPT = [
-    '你是一个买菜算账助手。从用户说的中文里提取购物清单，返回JSON。',
-    '规则：1. weight是斤数（数字），unitPrice是每斤单价（元，数字）',
-    '2. name是物品名，没名字就用"物品1""物品2"',
-    '3. "X块Y一斤"→单价X.Y，"买了X斤"→重量X',
-    '4. "斤半"→1.5斤，"X斤半"→X.5斤',
-    '5. "X两"→X/10斤（1两=0.1斤）',
-    '6. 只返回JSON数组，不要任何其他文字',
-    '示例输入："苹果3块8一斤买了四斤，梨5块9一斤买了两斤半"',
-    '示例输出：[{"name":"苹果","weight":4,"unitPrice":3.8},{"name":"梨","weight":2.5,"unitPrice":5.9}]'
-].join(' ');
+var AI_PROMPT_PREFIX = '从下面这句话提取购物清单，只返回JSON数组格式，不要任何其他文字。每项字段：name(物品名)、weight(斤数,数字)、unitPrice(每斤单价,数字)。"X块Y一斤"→单价X.Y，"买了X斤"→重量X，"斤半"→1.5斤，"X两"→X/10斤。\n\n';
 
 function parseWithAI(text, callback) {
     if (QWEN_API_KEY.indexOf('请替换') !== -1) {
@@ -462,11 +452,8 @@ function parseWithAI(text, callback) {
     var body = JSON.stringify({
         model: 'qwen-turbo',
         messages: [
-            { role: 'system', content: AI_SYSTEM_PROMPT },
-            { role: 'user', content: text }
-        ],
-        temperature: 0,
-        response_format: { type: 'json_object' }
+            { role: 'user', content: AI_PROMPT_PREFIX + text }
+        ]
     });
 
     fetch(QWEN_URL, {
@@ -490,14 +477,12 @@ function parseWithAI(text, callback) {
         if (!data) return;
         try {
             var content = data.choices[0].message.content;
-            // 尝试从返回内容中提取 JSON 数组
             var jsonMatch = content.match(/\[[\s\S]*\]/);
             if (!jsonMatch) {
-                callback(null, 'AI返回格式异常');
+                callback(null, 'AI返回格式异常: ' + content.substring(0, 50));
                 return;
             }
             var items = JSON.parse(jsonMatch[0]);
-            // 校验并标准化
             var result = [];
             for (var i = 0; i < items.length; i++) {
                 var item = items[i];
@@ -520,7 +505,7 @@ function parseWithAI(text, callback) {
             callback(null, 'AI解析失败: ' + e.message);
         }
     }).catch(function (e) {
-        callback(null, '网络不通，请检查联网: ' + e.message);
+        callback(null, '网络不通: ' + e.message);
     });
 }
 
