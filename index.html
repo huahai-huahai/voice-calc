@@ -82,20 +82,6 @@ body {
     flex-shrink: 0;
 }
 
-/* 手动添加 */
-.add-row { display: flex; gap: 8px; align-items: center; }
-.add-row input {
-    flex: 1; height: 44px; border: 2px solid #e0d5c0; border-radius: 10px;
-    padding: 0 10px; font-size: 1rem; font-family: inherit;
-    background: #FFFDF7; -webkit-appearance: none;
-}
-.add-row input:focus { outline: none; border-color: var(--primary); }
-.add-row input::placeholder { color: #cfc5b5; font-size: 0.9rem; }
-.add-row .btn-sm {
-    min-height: 44px; padding: 0 16px; font-size: 1rem; flex: 0 0 auto;
-    border-radius: 10px;
-}
-
 /* 结果区 */
 .result-card {
     background: var(--card-bg); border-radius: var(--card-radius);
@@ -167,14 +153,6 @@ body {
         <div class="empty-state">👆 在上面说一句话试试</div>
     </div>
 
-    <!-- 手动添加 -->
-    <div class="add-row">
-        <input type="text" id="addName" placeholder="物品名(可选)" maxlength="6">
-        <input type="text" id="addWeight" placeholder="斤数" inputmode="decimal">
-        <input type="text" id="addPrice" placeholder="单价" inputmode="decimal">
-        <button id="btnAdd" class="btn btn-accent btn-sm">➕</button>
-    </div>
-
     <!-- 合计结果 -->
     <div class="result-card" id="resultCard" style="display:none;">
         <div class="result-label">💰 一共要付</div>
@@ -200,157 +178,133 @@ var CN = { '零':0, '一':1, '二':2, '两':2, '三':3, '四':4, '五':5, '六':
 
 function cnToNum(s) {
     // "三斤二两" → "3斤2两", "四块五" → "4块5"
-    s = s.replace(/半/g, '5');  // 半 → 0.5 context handled below
     return s.replace(/[零一二两三四五六七八九十]/g, function (m) { return CN[m]; });
 }
 
 // ============================================================
-// 解析一句话 → 物品列表
+//  解析一句话 → 物品列表
 // ============================================================
 function parseVoiceInput(text) {
     if (!text || !text.trim()) return [];
     text = text.trim();
 
-    // 1. 中文数字转阿拉伯
+    // 1. 中文数字转阿拉伯（保护"一斤"不被误转）
+    text = text.replace(/一斤/g, '<<YIJIN>>');
     text = cnToNum(text);
+    text = text.replace(/<<YIJIN>>/g, '一斤');
+
+    // 预处理 "斤半" → "1.5斤", "X斤半" → "X.5斤"
+    text = text.replace(/(\d+\.?\d*)斤半/g, function (m, n) { return (parseFloat(n) + 0.5) + '斤'; });
+    text = text.replace(/斤半/g, '1.5斤');
 
     // 2. 按分隔符切开
-    //    先按显式分隔符切
-    var rawParts = text.split(/[,，;；、\n\r]+/);
+    var parts = splitByDelimiters(text);
 
-    //    再按隐性分隔词切（再|还|还有|然后|加上|另外）
-    var parts = [];
-    for (var i = 0; i < rawParts.length; i++) {
-        var sub = rawParts[i].split(/再|还买|还有|然后|加上|另外|接着/);
-        for (var j = 0; j < sub.length; j++) {
-            var s = sub[j].trim();
-            if (s) parts.push(s);
-        }
-    }
-
-    // 3. 逐段提取 (斤数, 单价)
+    // 3. 逐段提取物品
     var items = [];
     for (var i = 0; i < parts.length; i++) {
-        var item = extractWeightPrice(parts[i]);
+        var item = extractItem(parts[i]);
         if (item && item.weight > 0 && item.unitPrice > 0) {
             item.subtotal = Math.round(item.weight * item.unitPrice * 100) / 100;
+            if (!item.name) item.name = '物品' + (items.length + 1);
             items.push(item);
         }
     }
 
-    // 4. 如果按分隔符只拿到一个物品，尝试按"斤+块"模式重复来切
-    //    比如 "苹果3斤2两4块5梨2斤3块" 没有分隔符
+    // 4. 如果分隔后没拿到多个物品，尝试在长串里匹配多个 重量-单价 对
     if (items.length <= 1 && parts.length === 1) {
-        var greedy = extractMultipleItems(parts[0]);
+        var greedy = extractMultiplePairs(parts[0]);
         if (greedy.length > 1) items = greedy;
-    }
-
-    // 5. 给没名字的补上默认名
-    for (var i = 0; i < items.length; i++) {
-        if (!items[i].name) items[i].name = '物品' + (i + 1);
     }
 
     return items;
 }
 
-function extractWeightPrice(seg) {
-    var weight = 0, unitPrice = 0, name = '';
-
-    // ---- 提取斤数 ----
-    // "3斤2两" → 3.2, "3斤" → 3.0, "3.5斤" → 3.5, "2两" → 0.2
-    var wm = seg.match(/(\d+\.?\d*)\s*斤/);
-    if (wm) {
-        weight = parseFloat(wm[1]);
-        // 后面可能跟着 "X两"
-        var la = seg.substring(wm.index + wm[0].length).match(/^\s*(\d+\.?\d*)\s*两/);
-        if (la) weight += parseFloat(la[1]) / 10;
-    } else {
-        // 只有 "两" 没有 "斤"
-        var la2 = seg.match(/(\d+\.?\d*)\s*两/);
-        if (la2) weight = parseFloat(la2[1]) / 10;
+function splitByDelimiters(text) {
+    var raw = text.split(/[，,；;、。.\n\r]+/);
+    var parts = [];
+    for (var i = 0; i < raw.length; i++) {
+        var sub = raw[i].split(/再|还买|还有|然后|加上|另外|接着/);
+        for (var j = 0; j < sub.length; j++) {
+            var s = sub[j].trim();
+            if (s) parts.push(s);
+        }
     }
+    return parts;
+}
 
-    // ---- 提取单价 ----
-    // "4块5毛" → 4.5, "4块5" → 4.5, "4块" → 4.0
-    var pm = seg.match(/(\d+\.?\d*)\s*块/);
+function extractItem(seg) {
+    if (!seg) return null;
+
+    // ===== 提取单价 =====
+    // "X块Y" 后面是 毛/角/一斤/块钱/元 都视为 Y=毛
+    // "X块" → X 元, "X毛" → 0.X 元
+    var unitPrice = 0;
+    var pm = seg.match(/(\d+\.?\d*)\s*块\s*(\d+)?\s*(?:毛|角|一斤|块钱|元一斤|元\/斤|$|[^0-9])/);
     if (pm) {
         unitPrice = parseFloat(pm[1]);
-        // 后面可能跟着 "X毛" 或 "X角" 或直接数字
-        var rest = seg.substring(pm.index + pm[0].length);
-        var jm = rest.match(/^\s*(\d+\.?\d*)\s*(?:毛|角)/);
-        if (jm) {
-            var jv = parseFloat(jm[1]);
-            unitPrice += jv < 1 || jv >= 10 ? jv / 10 : jv / (jv >= 10 ? 100 : 10);
-            // 简单处理：如果 < 10 则视为毛
-            if (jm[1].length === 1 && jv > 0) unitPrice = parseFloat(pm[1]) + jv / 10;
-            else if (jv >= 10) unitPrice = parseFloat(pm[1]) + jv / 100;
-            else unitPrice = parseFloat(pm[1]) + jv / 10;
+        if (pm[2]) {
+            var mao = parseInt(pm[2]);
+            unitPrice += mao < 10 ? mao / 10 : mao / 100;
         }
     } else {
-        // 只有 "毛/角" 没有 "块"
-        var jm2 = seg.match(/(\d+\.?\d*)\s*(?:毛|角)/);
-        if (jm2) unitPrice = parseFloat(jm2[1]) / 10;
+        var jm = seg.match(/(\d+\.?\d*)\s*(?:毛|角)/);
+        if (jm) unitPrice = parseFloat(jm[1]) / 10;
     }
 
-    // ---- 提取物品名 ----
-    // 找到第一个数字的位置，之前的文字就是物品名
+    // ===== 提取重量 =====
+    // "买了X斤Y两", "称了X斤", "X斤Y两", "X斤", "X两"
+    var weight = 0;
+    var wm = seg.match(/(\d+\.?\d*)\s*斤\s*(\d+\.?\d*)?\s*两?/);
+    if (wm) {
+        weight = parseFloat(wm[1]);
+        if (wm[2]) weight += parseFloat(wm[2]) / 10;
+    } else {
+        var la = seg.match(/(\d+\.?\d*)\s*两/);
+        if (la) weight = parseFloat(la[1]) / 10;
+    }
+
+    // ===== 提取物品名 =====
+    var name = '';
     var firstNum = seg.search(/\d/);
     if (firstNum > 0) {
         name = seg.substring(0, firstNum)
-            .replace(/[买了共计一共多少算算钱总计给称称了]+/g, '')
+            .replace(/[买了共计一共多少算算钱总计给称称了要了拿了]+/g, '')
             .replace(/\s+/g, '')
-            .replace(/[，,。.、；;：:！!？?]+/g, '')
+            .replace(/[一斤块钱元每斤]+/g, '')
             .substring(0, 6);
     }
 
     return { name: name, weight: weight, unitPrice: unitPrice, subtotal: 0 };
 }
 
-function extractMultipleItems(text) {
-    // 在一个长串里找多个 "重量-单价" 对
-    // 模式: ...斤...两?...块...毛?...斤...两?...块...毛?...
+function extractMultiplePairs(text) {
     var items = [];
     var pos = 0;
-
     while (pos < text.length) {
-        // 找下一个重量
-        var wm = text.substring(pos).match(/(\d+\.?\d*)\s*斤\s*(\d+\.?\d*)?\s*两?/);
-        if (!wm) break;
-        var wStart = pos + wm.index;
+        // 找下一个 "X块" 或 "X斤"
+        var nextW = text.substring(pos).search(/(\d+\.?\d*)\s*斤/);
+        var nextP = text.substring(pos).search(/(\d+\.?\d*)\s*块/);
 
-        // 找这个重量后面的单价
-        var afterW = wStart + wm[0].length;
-        var pm = text.substring(afterW).match(/(\d+\.?\d*)\s*块\s*(\d+\.?\d*)?\s*(?:毛|角)?/);
-        if (!pm) break;
-        var pStart = afterW + pm.index;
+        // 优先找 重量-单价 或 单价-重量 配对
+        var match = extractItem(text.substring(pos));
+        if (match && match.weight > 0 && match.unitPrice > 0) {
+            match.name = match.name || ('物品' + (items.length + 1));
+            match.subtotal = Math.round(match.weight * match.unitPrice * 100) / 100;
+            items.push(match);
 
-        // 物品名 = wStart 之前到上一个物品结束或开头
-        var nameStart = (items.length === 0) ? 0 : pos;
-        var name = text.substring(nameStart, wStart)
-            .replace(/[买了共计一共多少算算钱总计给称称了一斤元块毛角]+/g, '')
-            .replace(/\s+/g, '').substring(0, 6);
-
-        var weight = parseFloat(wm[1]);
-        if (wm[2]) weight += parseFloat(wm[2]) / 10;
-
-        var unitPrice = parseFloat(pm[1]);
-        if (pm[2]) {
-            var mv = parseFloat(pm[2]);
-            unitPrice += mv >= 10 ? mv / 100 : mv / 10;
+            // 跳过已匹配的部分：找最后一个匹配的 "块" 或 "斤" 位置
+            var wIdx = text.substring(pos).search(/(\d+\.?\d*)\s*斤/);
+            var pIdx = text.substring(pos).search(/(\d+\.?\d*)\s*块/);
+            var endIdx = Math.max(
+                wIdx >= 0 ? wIdx + 10 : 0,
+                pIdx >= 0 ? pIdx + 10 : 0
+            );
+            pos += Math.max(endIdx, 5);
+        } else {
+            pos += 5;
         }
-
-        if (weight > 0 && unitPrice > 0) {
-            items.push({
-                name: name || ('物品' + (items.length + 1)),
-                weight: weight,
-                unitPrice: unitPrice,
-                subtotal: Math.round(weight * unitPrice * 100) / 100
-            });
-        }
-
-        pos = pStart + pm[0].length;
     }
-
     return items;
 }
 
@@ -577,28 +531,6 @@ document.getElementById('btnClear').addEventListener('click', function () {
     currentItems = [];
     updateAll();
     showStatus('', '');
-});
-
-// 手动添加
-document.getElementById('btnAdd').addEventListener('click', function () {
-    var name = document.getElementById('addName').value.trim() || '物品';
-    var w = parseFloat(document.getElementById('addWeight').value);
-    var p = parseFloat(document.getElementById('addPrice').value);
-    if (isNaN(w) || isNaN(p) || w <= 0 || p <= 0) {
-        showStatus('请正确填写斤数和单价', '#D4726A');
-        return;
-    }
-    currentItems.push({
-        name: name.substring(0, 6),
-        weight: w,
-        unitPrice: p,
-        subtotal: Math.round(w * p * 100) / 100
-    });
-    document.getElementById('addName').value = '';
-    document.getElementById('addWeight').value = '';
-    document.getElementById('addPrice').value = '';
-    updateAll();
-    showStatus('已添加', '#4A9C6F');
 });
 
 // 再读一遍
